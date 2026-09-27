@@ -1,0 +1,120 @@
+# The architecture as one runnable file: registry, three A2A agents, GAIA.
+#
+#   docker compose up --build              # everything, default settings
+#   curl localhost:8000/agents             # dynamic discovery: three agents, service-name URLs
+#   python -m coordinator.main "..."       # from the host, via the published 8080
+#   docker compose exec coordinator python -m coordinator.main
+#
+# Every service runs the same image (Dockerfile) with a different command.
+# .env supplies secrets, model and modes (host-side values); the `environment:`
+# blocks below override the addresses that differ inside the compose network,
+# because real environment variables beat the .env file in pydantic-settings.
+#
+# LLM access: by default the stack joins the network of an already running
+# LiteLLM container (project "litellm-local", alias "litellm") and calls it as
+# http://litellm:4000/v1. Set LITELLM_NETWORK if yours is named differently, or
+# COMPOSE_LLM_BASE_URL to point somewhere else entirely (for example
+# https://api.openai.com/v1 with LLM_BACKEND=openai).
+
+x-service: &service
+  build: .
+  image: gaia-a2a:local
+  env_file: .env
+  networks: [gaia, litellm]
+  restart: unless-stopped
+  # Each service writes logs/<service>.log here, so a run can be reviewed after
+  # the fact rather than only through `docker compose logs`. logs/.gitkeep is
+  # committed because Docker creates a missing bind-mount source as root, and
+  # these containers run as an unprivileged user that could not then write to it.
+  volumes:
+    - ./logs:/app/logs
+
+# The container-side addresses every service must agree on.
+x-env: &compose-env
+  REGISTRY_URL: http://registry:8000
+  LLM_BASE_URL: ${COMPOSE_LLM_BASE_URL:-http://litellm:4000/v1}
+  LITELLM_PROXY_URL: ${COMPOSE_LITELLM_PROXY_URL:-http://litellm:4000}
+  AETHER_AGENT_URL: http://aether-agent:8001
+  DEMETER_AGENT_URL: http://demeter-agent:8002
+  HEPHAESTUS_AGENT_URL: http://hephaestus-agent:8003
+
+# The image has no curl; a one-line urllib probe does the same.
+x-healthcheck: &healthcheck
+  interval: 5s
+  timeout: 3s
+  retries: 12
+  start_period: 5s
+
+services:
+  registry:
+    <<: *service
+    command: ["python", "-m", "uvicorn", "registry_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["${REGISTRY_HOST_PORT:-8000}:8000"]
+    environment: *compose-env
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+
+  aether-agent:
+    <<: *service
+    command: ["python", "-m", "agents.aether_agent"]
+    ports: ["8001:8001"]
+    environment: *compose-env
+    depends_on:
+      registry: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/.well-known/agent-card.json')"]
+
+  demeter-agent:
+    <<: *service
+    command: ["python", "-m", "agents.demeter_agent"]
+    ports: ["8002:8002"]
+    environment: *compose-env
+    depends_on:
+      registry: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/.well-known/agent-card.json')"]
+
+  hephaestus-agent:
+    <<: *service
+    command: ["python", "-m", "agents.hephaestus_agent"]
+    ports: ["8003:8003"]
+    environment: *compose-env
+    depends_on:
+      registry: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/.well-known/agent-card.json')"]
+
+  coordinator:
+    <<: *service
+    # Image default command: uvicorn coordinator.api:app on 0.0.0.0:8080
+    ports: ["8080:8080"]
+    environment: *compose-env
+    # GAIA discovers agents at call time, so she only needs them registered by
+    # the time someone asks; waiting for healthy agents keeps the first
+    # question from racing their startup.
+    depends_on:
+      aether-agent: { condition: service_healthy }
+      demeter-agent: { condition: service_healthy }
+      hephaestus-agent: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck
+      # The lifespan starts the briefing handshake as a background task and
+      # yields at once, so /health answers within a second of the process
+      # starting. "Healthy" therefore means serving, not briefed; the page
+      # reports the briefing's own progress. 30s is enough slack for interpreter
+      # and import time, and it catches a genuinely broken coordinator in half a
+      # minute instead of giving it three.
+      start_period: 30s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+
+networks:
+  gaia: {}
+  # The network your LiteLLM container is on. `docker network ls` shows it;
+  # `docker network create <name>` if you have none and use another backend.
+  litellm:
+    external: true
+    name: ${LITELLM_NETWORK:-litellm-local_frontend}

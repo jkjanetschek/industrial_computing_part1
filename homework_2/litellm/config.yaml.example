@@ -1,0 +1,122 @@
+# LiteLLM proxy configuration for the OPTIONAL `litellm` compose profile.
+#
+#   cp litellm/config.yaml.example litellm/config.yaml
+#   docker compose --profile litellm up
+#
+# LiteLLM acts as agent registry (REGISTRY_MODE=litellm) and/or as A2A relay
+# (AGENT_CALL_MODE=litellm).
+#
+# Secrets are never written here. Every credential is `os.environ/NAME` and
+# comes from the container environment (docker-compose.yml -> .env).
+#
+# Verified against litellm :
+#   - `agents:` entries are loaded at startup and stored verbatim
+#     (agent_registry.load_agents_from_config). No database is needed for them.
+#   - agent_id = sha256(agent_name), stable across restarts.
+#   - The relay path /v1/a2a/{agent_id}/message/send resolves the segment by
+#     id first, then by NAME (common_utils/registry_read_through.py). Keeping
+#     agent_name identical to the id our own registry uses means the
+#     coordinator can relay with the same id in both registry modes.
+#   - GET /v1/agents returns agent_card_params.url unchanged, i.e. the real
+#     upstream address below, so direct calls work from a LiteLLM listing too.
+
+# ---------------------------------------------------------------------------
+# Models the agents and the coordinator can request via LLM_BACKEND=litellm.
+# model_name is what goes into LLM_MODEL. Add or replace entries freely; the
+# names below only have to match what you put in .env.
+# ---------------------------------------------------------------------------
+model_list:
+  - model_name: gpt-5
+    litellm_params:
+      model: openai/gpt-5
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  # If you already run a LiteLLM with a custom provider (custom_provider_map),
+  # copy those model_list entries and the provider mapping here instead.
+
+litellm_settings:
+  # Silently drop request parameters a provider does not support instead of
+  # failing the call; keeps one client code path across OpenAI/Gemini.
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Only enforced when agents are registered through the admin UI/API
+  # (POST /v1/agents). The `agents:` list below bypasses it, but keeping the
+  # compose hostnames here lets you also add agents via the UI while testing.
+  user_url_allowed_hosts:
+    - aether-agent
+    - demeter-agent
+    - hephaestus-agent
+
+# ---------------------------------------------------------------------------
+# A2A agents. One entry per sub-agent in docker-compose.yml.
+#
+#   agent_name             MUST equal the id the agent registers under in our
+#                          own registry (agents/*_agent.py -> with_self_registration(app, "<id>")).
+#   agent_card_params.url  the agent's address ON THE COMPOSE NETWORK
+#                          (service name + port), never localhost: inside the
+#                          LiteLLM container, localhost is LiteLLM itself.
+#   description / skills   what the coordinator's LLM reasons over when it
+#                          picks an agent via lookup_agents(); keep them in
+#                          sync with the skills passed to agent_to_a2a().
+#
+# The three agents are GAIA's subfunctions from Horizon Zero Dawn; the names
+# below must match agents/*_agent.py and the docker-compose.yml service names.
+# ---------------------------------------------------------------------------
+agents:
+  - agent_name: aether
+    agent_card_params:
+      name: aether
+      description: AETHER subfunction. Reports the atmospheric composition of a terraforming sector and how long detoxification takes until flora can grow.
+      url: http://aether-agent:8001
+      version: "1.0.0"
+      capabilities:
+        streaming: false
+        pushNotifications: false
+      defaultInputModes: ["text/plain"]
+      defaultOutputModes: ["text/plain"]
+      skills:
+        - id: atmosphere-assessment
+          name: Atmosphere assessment
+          description: Oxygen, toxicity, particulates and scrubbing days for a named sector.
+          tags: [atmosphere, toxicity, terraforming]
+
+  - agent_name: demeter
+    agent_card_params:
+      name: demeter
+      description: DEMETER subfunction. Plans the reseeding of a sector into a target biome and returns the machine-hours the plan needs.
+      url: http://demeter-agent:8002
+      version: "1.0.0"
+      capabilities:
+        streaming: false
+        pushNotifications: false
+      defaultInputModes: ["text/plain"]
+      defaultOutputModes: ["text/plain"]
+      skills:
+        - id: reseeding-plan
+          name: Reseeding plan
+          description: Species list, hectares and Grazer/Scrapper machine-hours for sector plus target biome.
+          tags: [reseeding, flora, biome]
+
+  - agent_name: hephaestus
+    agent_card_params:
+      name: hephaestus
+      description: HEPHAESTUS subfunction. Checks Cauldron machine inventory and estimates how long fabricating and deploying machines for a workload takes.
+      url: http://hephaestus-agent:8003
+      version: "1.0.0"
+      capabilities:
+        streaming: false
+        pushNotifications: false
+      defaultInputModes: ["text/plain"]
+      defaultOutputModes: ["text/plain"]
+      skills:
+        - id: machine-fabrication
+          name: Machine fabrication
+          description: Available units, shortfall and fabrication days for a machine type and machine-hour workload.
+          tags: [fabrication, machines, cauldron]

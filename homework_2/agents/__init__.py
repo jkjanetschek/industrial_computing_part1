@@ -1,0 +1,1 @@
+# Package marker for the A2A sub-agents (PydanticAI + fasta2a).

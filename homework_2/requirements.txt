@@ -1,0 +1,36 @@
+# Direct dependencies of homework_teil2 (distributed A2A system).
+# Compile the pinned lockfile with:
+#   pip-compile --generate-hashes --output-file=requirements.lock --strip-extras requirements.txt
+# Install with:
+#   pip install --require-hashes -r requirements.lock
+
+# --- Shared configuration and schemas --------------------
+pydantic-settings>=2.0          # shared/settings.py: BaseSettings, SettingsConfigDict
+pydantic>=2.12                  # shared/schemas.py: BaseModel for AgentCard / AgentListing
+
+# --- Sub-agents: PydanticAI wrapped as A2A servers ---------------
+pydantic-ai-slim[openai]>=2.40  # agents/model_factory.py: OpenAIChatModel + OpenAIProvider; agents/*_agent.py: Agent
+fasta2a[pydantic-ai]>=2.0       # agents/*_agent.py: fasta2a.pydantic_ai.agent_to_a2a
+uvicorn>=0.30                   # agents/*_agent.py and registry_service/main.py: serve the ASGI apps
+
+# --- Registry service ---------------------------------------------
+fastapi>=0.110                  # registry_service/main.py and coordinator/api.py: FastAPI, HTTPException, Form
+python-multipart>=0.0.9         # coordinator/api.py: FastAPI needs it to parse the web page's form POST
+markdown-it-py>=3.0             # coordinator/templates.py: render GAIA's markdown answers in the web page (as in homework part 1)
+httpx>=0.28                     # agents/registration.py, coordinator/registry_client.py, coordinator/agent_client.py, spikes/check_litellm_registry.py, tests/
+
+# --- Coordinator: LangChain create_agent ------------------
+langchain>=1.0                  # coordinator/gaia.py: langchain.agents.create_agent, only in the 1.x line
+langchain-core>=1.0             # coordinator/tools.py: @tool decorator for lookup_agents / call_agent
+langchain-openai>=1.0           # coordinator/model_factory.py: ChatOpenAI against the OpenAI-compatible base_url
+langgraph>=1.0                  # coordinator/gaia.py: langgraph.checkpoint.memory.MemorySaver checkpointer
+
+# --- Tests --------------------------------------------------------
+pytest>=8.0                     # tests/; async tests use the anyio pytest plugin that ships with anyio (a dependency of httpx)
+
+# Deliberately NOT listed:
+# - litellm: only used as a self-hosted proxy container (docker-compose profile
+#   "litellm") reached over HTTP through the OpenAI adapters above. No
+#   module imports it, and its metadata pins openai<3 which conflicts with
+#   pydantic-ai-slim[openai]>=2.40 (needs openai>=3.8).
+# - pytest-asyncio: the async tests run on anyio's plugin (`@pytest.mark.anyio`), already installed via httpx.

@@ -1,0 +1,53 @@
+# --- Python ---
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.ipynb_checkpoints/
+**/.coverage
+**/.coverage.*
+**/htmlcov/
+
+# --- Virtual environments (any subfolder, any common name) ---
+**/.venv/
+**/venv/
+**/env/
+**/ENV/
+**/.virtualenv/
+
+# --- Secrets / config (any subfolder) ---
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+**/*.pem
+**/*.key
+**/secrets.*
+
+# --- IDE / editor ---
+.idea/
+**/.vscode/
+**/*.swp
+**/*.swo
+
+# --- OS cruft ---
+**/.DS_Store
+**/Thumbs.db
+
+# --- Node (in case any subproject uses it) ---
+**/node_modules/
+
+# --- Generated at runtime (keep a sample copy for the deliverable instead) ---
+**/inventory.db
+**/audit.log
+**/audit.log.*
+**/audit.jsonl
+**/run.log
+**/agent.log
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/logs/*.log
+!**/logs/.gitkeep

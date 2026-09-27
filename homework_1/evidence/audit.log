@@ -1,0 +1,5 @@
+
+2026-09-14 21:42:31,058 | customer | order | SKU GPU-2001, qty 2, total 593.98
+2026-09-14 21:42:31,060 | customer | order | SKU GPU-2005, qty 5, total 4749.95
+2026-09-14 21:42:31,062 | customer | order | SKU GPU-2007, qty 7, total 1524.53
+2026-09-14 21:44:00,161 | security | blocked_request | Customer asked for internal discount calculation details.
